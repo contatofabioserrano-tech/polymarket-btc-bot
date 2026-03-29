@@ -377,7 +377,7 @@ async function tick() {
       state.balance = (config.maxBets - strategy.totalBets) * config.betSize;
     }
 
-    state.status = strategy.canBet ? 'monitorando' : 'encerrado';
+    state.status = !state.market ? 'fora de horário' : (strategy.canBet ? 'monitorando' : 'encerrado');
     state.error  = null;
     broadcast();
 
