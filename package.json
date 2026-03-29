@@ -1,0 +1,20 @@
+{
+  "name": "polymarket-bot",
+  "version": "1.0.0",
+  "description": "Bot de apostas BTC 5m no Polymarket",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "ethers": "^6.13.1",
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}

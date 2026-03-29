@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: polymarket-btc-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      # ── Polymarket ──
+      - key: PRIVATE_KEY
+        sync: false          # você cola no painel do Render
+      - key: POLY_API_KEY
+        sync: false          # opcional se já tiver gerado
+      - key: POLY_API_SECRET
+        sync: false
+      - key: POLY_PASSPHRASE
+        sync: false
+      # ── Telegram ──
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      # ── Estratégia ──
+      - key: MAX_BETS
+        value: "20"
+      - key: BET_SIZE
+        value: "2"
+      - key: MIN_CONFIDENCE
+        value: "0.65"
+      - key: MAX_LOSS_STREAK
+        value: "5"
+      - key: DRY_RUN
+        value: "true"        # mude para false quando quiser apostar de verdade
