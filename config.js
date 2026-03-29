@@ -35,11 +35,15 @@ export const config = {
     chainId:          137,
     exchangeContract: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
     usdcContract:     '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
-    // API Key (opcional — o bot gera automaticamente via privateKey)
+    walletAddress:    process.env.WALLET_ADDRESS      || '',
     apiKey:           process.env.POLY_API_KEY        || '',
     apiSecret:        process.env.POLY_API_SECRET     || '',
     passphrase:       process.env.POLY_PASSPHRASE     || '',
   },
+
+  // Browser automation
+  chromePath:    process.env.CHROME_PATH    || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  chromeProfile: process.env.CHROME_PROFILE || `C:\\Users\\${process.env.USERNAME || 'f.serrano'}\\AppData\\Local\\Google\\Chrome\\User Data`,
 
   signals: {
     minMomentum:    0.18,

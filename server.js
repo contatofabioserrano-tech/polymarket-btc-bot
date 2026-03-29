@@ -3,7 +3,7 @@ import { WebSocketServer } from 'ws';
 import { createServer }    from 'http';
 import { config }          from './config.js';
 import { analyzeSignal }   from './lib/signals.js';
-import { findActiveBtcMarket, placeBet, getBalance } from './lib/polymarket.js';
+import { findCurrentBtcMarket, placeBetBrowser } from './lib/browser-trader.js';
 import { BettingStrategy } from './lib/strategy.js';
 import { telegram }        from './lib/telegram.js';
 
@@ -241,15 +241,13 @@ async function tick() {
 
     // 2. Mercado
     try {
-      state.market = await findActiveBtcMarket();
+      state.market = await findCurrentBtcMarket();
     } catch (e) {
       log('Mercado indisponível: ' + e.message, 'warn');
     }
 
-    // 3. Saldo
-    state.balance = config.dryRun
-      ? (config.maxBets - strategy.totalBets) * config.betSize
-      : await getBalance();
+    // 3. Saldo (estimado)
+    state.balance = (config.maxBets - strategy.totalBets) * config.betSize;
 
     state.status = strategy.canBet ? 'monitorando' : 'encerrado';
     state.error  = null;
@@ -270,7 +268,7 @@ async function tick() {
     log(`Apostando $${config.betSize} em ${dec.direction}...`, 'bet');
     await telegram.signal({ direction: signal.direction, momentum: signal.momentum, rsi: signal.rsi, confidence: signal.confidence, marketPrice: dec.odds });
 
-    const result = await placeBet({ direction: dec.direction, betSize: config.betSize, market: state.market });
+    const result = await placeBetBrowser({ direction: dec.direction, betSize: config.betSize, marketInfo: state.market });
     const bet    = strategy.addBet({ direction: dec.direction, odds: result.odds, betSize: config.betSize, txHash: result.txHash });
 
     log(`#${bet.id} ${bet.direction} @ ${bet.odds?.toFixed(3)} ${config.dryRun ? '[simulado]' : ''}`, 'bet');
