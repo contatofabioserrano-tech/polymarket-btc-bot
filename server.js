@@ -1,13 +1,20 @@
 import express   from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer }    from 'http';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join }  from 'path';
 import { config }          from './config.js';
 import { analyzeSignal }   from './lib/signals.js';
 import { findCurrentBtcMarket, placeBetBrowser } from './lib/browser-trader.js';
+import { placeBet, getBalance, findActiveBtcMarket } from './lib/polymarket.js';
 import { BettingStrategy } from './lib/strategy.js';
 import { telegram }        from './lib/telegram.js';
 
+const __dir = dirname(fileURLToPath(import.meta.url));
+
 const app  = express();
+app.use(express.json());
 const http = createServer(app);
 const wss  = new WebSocketServer({ server: http });
 
@@ -43,7 +50,7 @@ app.get('/', (_, res) => res.send(`<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Polymarket BTC Bot</title>
+  <title>Fortuna Bot · BTC 5m</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:#0a0e1a;color:#e2e8f0;font-family:'Segoe UI',monospace;padding:20px}
@@ -77,7 +84,10 @@ app.get('/', (_, res) => res.send(`<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>🤖 Polymarket BTC 5m Bot <span id="mode-tag" class="mode-tag badge-sim"></span></h1>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+    <h1 style="margin:0">⚡ Fortuna Bot · BTC 5m <span id="mode-tag" class="mode-tag badge-sim"></span></h1>
+    <a href="/setup" style="font-size:.75rem;color:#38bdf8;text-decoration:none;background:#0f172a;padding:6px 14px;border-radius:6px;border:1px solid #1e293b">🔑 Configurar Chave</a>
+  </div>
   <p class="sub"><span id="status-dot"></span><span id="status-text">conectando...</span></p>
 
   <div class="grid">
@@ -225,8 +235,117 @@ setInterval(() => {
 </script>
 </body></html>`));
 
+// ── Setup page ─────────────────────────────────────────────────────────────
+app.get('/setup', (_, res) => res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bot Setup — Chave Privada</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0a0e1a;color:#e2e8f0;font-family:'Segoe UI',monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .box{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:40px;max-width:520px;width:100%}
+    h1{color:#38bdf8;font-size:1.3rem;margin-bottom:8px}
+    p{color:#64748b;font-size:.9rem;margin-bottom:24px;line-height:1.6}
+    .step{background:#0f172a;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:.85rem;color:#94a3b8;border-left:3px solid #38bdf8}
+    .step b{color:#e2e8f0}
+    label{display:block;font-size:.8rem;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+    input{width:100%;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px 14px;color:#e2e8f0;font-family:monospace;font-size:.85rem;outline:none}
+    input:focus{border-color:#38bdf8}
+    button{width:100%;margin-top:16px;padding:14px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;transition:background .2s}
+    button:hover{background:#0284c7}
+    button:disabled{background:#1e293b;color:#64748b;cursor:not-allowed}
+    .msg{margin-top:16px;padding:12px;border-radius:8px;font-size:.85rem;text-align:center;display:none}
+    .msg.ok{background:#14532d;color:#22c55e;display:block}
+    .msg.err{background:#450a0a;color:#ef4444;display:block}
+    a.back{display:block;text-align:center;margin-top:20px;color:#38bdf8;font-size:.85rem;text-decoration:none}
+    a.back:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>🔑 Configurar Chave Privada</h1>
+    <p>Para que o bot possa fazer apostas reais via API, precisa da sua chave privada do Polymarket.</p>
+
+    <div class="step"><b>Passo 1:</b> Acesse <b>polymarket.com</b> → clique no seu avatar → <b>Configurações</b></div>
+    <div class="step"><b>Passo 2:</b> Clique na aba <b>"Chave privada"</b> ou <b>"Private key"</b></div>
+    <div class="step"><b>Passo 3:</b> Copie a chave que começa com <b>0x...</b> e cole abaixo</div>
+
+    <label for="pk">Chave Privada (0x...)</label>
+    <input type="password" id="pk" placeholder="0x0000000000000000000000000000000000000000000000000000000000000000" autocomplete="off">
+
+    <button id="btn" onclick="save()">Salvar e Ativar Bot</button>
+    <div class="msg" id="msg"></div>
+    <a class="back" href="/">← Voltar ao Dashboard</a>
+  </div>
+<script>
+async function save() {
+  const pk = document.getElementById('pk').value.trim();
+  const btn = document.getElementById('btn');
+  const msg = document.getElementById('msg');
+  msg.className = 'msg';
+  if (!pk.startsWith('0x') || pk.length < 64) {
+    msg.className = 'msg err';
+    msg.textContent = '❌ Chave inválida — deve começar com 0x e ter 66 caracteres';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  try {
+    const res = await fetch('/api/setup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ privateKey: pk }) });
+    const data = await res.json();
+    if (data.ok) {
+      msg.className = 'msg ok';
+      msg.textContent = '✅ Chave salva! Bot iniciando apostas reais...';
+      btn.textContent = 'Salvo!';
+      setTimeout(() => location.href = '/', 2500);
+    } else {
+      throw new Error(data.error || 'Erro desconhecido');
+    }
+  } catch(e) {
+    msg.className = 'msg err';
+    msg.textContent = '❌ ' + e.message;
+    btn.disabled = false;
+    btn.textContent = 'Salvar e Ativar Bot';
+  }
+}
+document.getElementById('pk').addEventListener('keydown', e => { if(e.key==='Enter') save(); });
+</script>
+</body></html>`));
+
+// ── Setup API ──────────────────────────────────────────────────────────────
+app.post('/api/setup', (req, res) => {
+  const { privateKey } = req.body || {};
+  if (!privateKey || !privateKey.startsWith('0x') || privateKey.length < 64) {
+    return res.status(400).json({ ok: false, error: 'Chave privada inválida' });
+  }
+  try {
+    const envPath = join(__dir, '.env');
+    let envContent = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+    if (envContent.includes('PRIVATE_KEY=')) {
+      envContent = envContent.replace(/^PRIVATE_KEY=.*$/m, `PRIVATE_KEY=${privateKey}`);
+    } else {
+      envContent = envContent.trimEnd() + `\nPRIVATE_KEY=${privateKey}\n`;
+    }
+    writeFileSync(envPath, envContent, 'utf8');
+    process.env.PRIVATE_KEY = privateKey;
+    config.privateKey = privateKey;
+    log('🔑 Chave privada configurada — modo CLOB API ativado!', 'bet');
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── Health check ───────────────────────────────────────────────────────────
-app.get('/api/status', (_, res) => res.json({ ...state, bets: strategy.bets, summary: strategy.summary() }));
+app.get('/api/status', (_, res) => res.json({
+  ...state,
+  bets: strategy.bets,
+  summary: strategy.summary(),
+  hasPrivateKey: !!config.privateKey,
+  setupUrl: config.privateKey ? null : `http://localhost:${config.port}/setup`,
+}));
 
 // ── Bot loop ───────────────────────────────────────────────────────────────
 async function tick() {
@@ -241,13 +360,22 @@ async function tick() {
 
     // 2. Mercado
     try {
-      state.market = await findCurrentBtcMarket();
+      if (config.privateKey) {
+        state.market = await findActiveBtcMarket();
+      } else {
+        state.market = await findCurrentBtcMarket();
+      }
     } catch (e) {
       log('Mercado indisponível: ' + e.message, 'warn');
     }
 
-    // 3. Saldo (estimado)
-    state.balance = (config.maxBets - strategy.totalBets) * config.betSize;
+    // 3. Saldo
+    if (config.privateKey) {
+      const bal = await getBalance();
+      state.balance = bal !== null ? bal : (config.maxBets - strategy.totalBets) * config.betSize;
+    } else {
+      state.balance = (config.maxBets - strategy.totalBets) * config.betSize;
+    }
 
     state.status = strategy.canBet ? 'monitorando' : 'encerrado';
     state.error  = null;
@@ -268,7 +396,9 @@ async function tick() {
     log(`Apostando $${config.betSize} em ${dec.direction}...`, 'bet');
     await telegram.signal({ direction: signal.direction, momentum: signal.momentum, rsi: signal.rsi, confidence: signal.confidence, marketPrice: dec.odds });
 
-    const result = await placeBetBrowser({ direction: dec.direction, betSize: config.betSize, marketInfo: state.market });
+    const result = config.privateKey
+      ? await placeBet({ direction: dec.direction, betSize: config.betSize, market: state.market })
+      : await placeBetBrowser({ direction: dec.direction, betSize: config.betSize, marketInfo: state.market });
     const bet    = strategy.addBet({ direction: dec.direction, odds: result.odds, betSize: config.betSize, txHash: result.txHash });
 
     log(`#${bet.id} ${bet.direction} @ ${bet.odds?.toFixed(3)} ${config.dryRun ? '[simulado]' : ''}`, 'bet');
@@ -304,9 +434,15 @@ async function tick() {
 
 // ── Start ───────────────────────────────────────────────────────────────────
 http.listen(config.port, async () => {
-  console.log(`\n🚀 Polymarket Bot rodando na porta ${config.port}`);
+  console.log(`\n🚀 Fortuna Bot rodando na porta ${config.port}`);
   console.log(`   Dashboard: http://localhost:${config.port}`);
-  console.log(`   Modo: ${config.dryRun ? '🧪 SIMULAÇÃO' : '🔴 AO VIVO'}\n`);
+  console.log(`   Modo: ${config.dryRun ? '🧪 SIMULAÇÃO' : '🔴 AO VIVO'}`);
+  if (!config.privateKey) {
+    console.log(`\n   ⚠️  Chave privada não configurada!`);
+    console.log(`   👉 Acesse http://localhost:${config.port}/setup para ativar apostas reais via CLOB API\n`);
+  } else {
+    console.log(`   ✅ Chave privada configurada — CLOB API ativo\n`);
+  }
 
   await telegram.botStart({ dryRun: config.dryRun, maxBets: config.maxBets, betSize: config.betSize });
 
